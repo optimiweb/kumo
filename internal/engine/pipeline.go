@@ -544,6 +544,8 @@ func sourceFromRelation(r crawl.DiscoveryRelation) crawl.SourceCode {
 		return crawl.SourceCanonical
 	case crawl.RelationHreflang:
 		return crawl.SourceHreflang
+	case crawl.RelationLog:
+		return crawl.SourceLog
 	default:
 		return crawl.SourceLink
 	}

@@ -25,12 +25,13 @@ const (
 	SourceRobots    SourceCode = "robots"
 	SourceCanonical SourceCode = "canonical"
 	SourceHreflang  SourceCode = "hreflang"
+	SourceLog       SourceCode = "log"
 )
 
 // Validate reports whether the source is known.
 func (s SourceCode) Validate() error {
 	switch s {
-	case SourceSeed, SourceLink, SourceRedirect, SourceSitemap, SourceRobots, SourceCanonical, SourceHreflang:
+	case SourceSeed, SourceLink, SourceRedirect, SourceSitemap, SourceRobots, SourceCanonical, SourceHreflang, SourceLog:
 		return nil
 	default:
 		return fmt.Errorf("%w: source", ErrInvalidConfig)

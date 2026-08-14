@@ -222,6 +222,7 @@ const (
 	SourceRobots                      = crawl.SourceRobots
 	SourceCanonical                   = crawl.SourceCanonical
 	SourceHreflang                    = crawl.SourceHreflang
+	SourceLog                         = crawl.SourceLog
 	FrontierClaimUnspecified          = crawl.FrontierClaimUnspecified
 	FrontierLeased                    = crawl.FrontierLeased
 	FrontierIdle                      = crawl.FrontierIdle
@@ -240,6 +241,7 @@ const (
 	RelationCanonical                 = crawl.RelationCanonical
 	RelationHreflang                  = crawl.RelationHreflang
 	RelationRobotsSitemap             = crawl.RelationRobotsSitemap
+	RelationLog                       = crawl.RelationLog
 	DiscoveryUnspecified              = crawl.DiscoveryUnspecified
 	DiscoveryInserted                 = crawl.DiscoveryInserted
 	DiscoveryDuplicate                = crawl.DiscoveryDuplicate

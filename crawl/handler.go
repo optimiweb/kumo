@@ -15,6 +15,7 @@ const (
 	RelationCanonical
 	RelationHreflang
 	RelationRobotsSitemap
+	RelationLog
 )
 
 // String returns a stable relation name.
@@ -32,6 +33,8 @@ func (r DiscoveryRelation) String() string {
 		return "hreflang"
 	case RelationRobotsSitemap:
 		return "robots_sitemap"
+	case RelationLog:
+		return "log"
 	default:
 		return "unspecified"
 	}
