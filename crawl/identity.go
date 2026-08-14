@@ -18,16 +18,24 @@ type IdentityKey [32]byte
 
 // URLIdentity binds a canonical fetch URL to its key.
 type URLIdentity struct {
-	key IdentityKey
-	url string
+	key  IdentityKey
+	url  string
+	host string
+	path string
 }
 
 // NewURLIdentity constructs an identity after structural validation.
+// Host and path are taken from the already-canonical string via net/url.
 func NewURLIdentity(key IdentityKey, canonicalURL string) (URLIdentity, error) {
-	if err := validateCanonicalURL(canonicalURL); err != nil {
+	u, err := parseCanonicalURL(canonicalURL)
+	if err != nil {
 		return URLIdentity{}, err
 	}
-	return URLIdentity{key: key, url: canonicalURL}, nil
+	path := u.Path
+	if path == "" {
+		path = "/"
+	}
+	return URLIdentity{key: key, url: canonicalURL, host: u.Hostname(), path: path}, nil
 }
 
 // Key returns the identity key.
@@ -35,6 +43,12 @@ func (i URLIdentity) Key() IdentityKey { return i.key }
 
 // URL returns the canonical fetch URL.
 func (i URLIdentity) URL() string { return i.url }
+
+// Host returns the hostname from the canonical URL, without a port.
+func (i URLIdentity) Host() string { return i.host }
+
+// Path returns the URL path only (no query). An empty path is "/".
+func (i URLIdentity) Path() string { return i.path }
 
 // Equal reports whether both identities match.
 func (i URLIdentity) Equal(other URLIdentity) bool {
@@ -163,39 +177,44 @@ func CanonicalFetchURL(raw string) (string, error) {
 }
 
 func validateCanonicalURL(raw string) error {
+	_, err := parseCanonicalURL(raw)
+	return err
+}
+
+func parseCanonicalURL(raw string) (*url.URL, error) {
 	u, err := url.Parse(raw)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrInvalidConfig, err)
+		return nil, fmt.Errorf("%w: %v", ErrInvalidConfig, err)
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
-		return fmt.Errorf("%w: scheme", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: scheme", ErrInvalidConfig)
 	}
 	if u.User != nil {
-		return fmt.Errorf("%w: userinfo", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: userinfo", ErrInvalidConfig)
 	}
 	if u.Fragment != "" {
-		return fmt.Errorf("%w: fragment", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: fragment", ErrInvalidConfig)
 	}
 	if u.Host == "" {
-		return fmt.Errorf("%w: host", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: host", ErrInvalidConfig)
 	}
 	host := u.Hostname()
 	if host == "" {
-		return fmt.Errorf("%w: host", ErrInvalidConfig)
+		return nil, fmt.Errorf("%w: host", ErrInvalidConfig)
 	}
 	if port := u.Port(); port != "" {
 		p, err := strconv.Atoi(port)
 		if err != nil || p < 1 || p > 65535 {
-			return fmt.Errorf("%w: port", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: port", ErrInvalidConfig)
 		}
 	}
 	// Ensure hostname is either a valid domain-like token or IP literal.
 	if ip := net.ParseIP(host); ip == nil {
 		if strings.Contains(host, " ") {
-			return fmt.Errorf("%w: host", ErrInvalidConfig)
+			return nil, fmt.Errorf("%w: host", ErrInvalidConfig)
 		}
 	}
-	return nil
+	return u, nil
 }
 
 // OriginKey returns scheme://host[:port] with default ports omitted.

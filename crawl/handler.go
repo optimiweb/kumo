@@ -50,6 +50,10 @@ type Discovery struct {
 	// Set it for child sitemaps (XML) discovered from a sitemap index;
 	// page URLs from a urlset default to HTML.
 	ResourceClass ResourceClass
+	// Attrs is an optional opaque map copied onto EnqueueRequest.
+	// The engine does not interpret keys. Suggested names only:
+	// relation_key (hreflang lang, etc.), lastmod, changefreq, priority.
+	Attrs map[string]string
 }
 
 // DiscoveryState classifies discovery submission.

@@ -170,6 +170,9 @@ type EnqueueRequest struct {
 	Priority      int32
 	ResourceClass ResourceClass
 	AvailableAt   time.Time
+	// Attrs is an optional opaque pass-through from Discovery.Attrs.
+	// The engine and memory adapter do not interpret keys.
+	Attrs map[string]string
 }
 
 // Validate checks enqueue fields.

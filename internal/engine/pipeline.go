@@ -520,6 +520,7 @@ func (c *Engine) submitDiscovery(
 		Source:        sourceFromRelation(d.Relation),
 		Priority:      d.Priority,
 		ResourceClass: class,
+		Attrs:         copyAttrs(d.Attrs),
 	})
 	if err != nil {
 		if err == crawl.ErrBudgetExhausted {
@@ -532,6 +533,17 @@ func (c *Engine) submitDiscovery(
 		state = crawl.DiscoveryInserted
 	}
 	return crawl.DiscoveryResult{State: state, ID: enq.ID}, nil
+}
+
+func copyAttrs(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 func sourceFromRelation(r crawl.DiscoveryRelation) crawl.SourceCode {
