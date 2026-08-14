@@ -6,12 +6,17 @@ import (
 )
 
 // WorkID uniquely identifies frontier work within an adapter scope.
+// Adapters assign IDs; Kumo does not generate them.
 type WorkID string
 
 // LeaseToken is an unguessable lease ownership token.
 type LeaseToken string
 
-// OperationID is a caller-generated idempotency key.
+// OperationID is a caller-generated 16-byte idempotency key for Claim,
+// Transition, Renew, and related adapter operations. Adapters generate
+// their own values (typically crypto/rand). Replay of the same
+// OperationID must return the recorded result without re-running side
+// effects.
 type OperationID [16]byte
 
 // SourceCode classifies how work was discovered.

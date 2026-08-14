@@ -201,6 +201,8 @@ func DefaultHeaderAllowlist() []string {
 		"x-robots-tag",
 		"x-cache",
 		"age",
+		"link",
+		"cf-cache-status",
 	}
 }
 

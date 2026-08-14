@@ -13,7 +13,10 @@ import (
 	whatwgurl "github.com/optimiweb/kumo/pkg/whatwgurl/url"
 )
 
-// IdentityKey is a collision-resistant opaque key.
+// IdentityKey is a collision-resistant 32-byte opaque key. DefaultIdentity
+// derives it as SHA-256(method + "\n" + canonical URL). Host() and Path()
+// are not part of the key; adapters that need a path hash compute it
+// themselves from Path().
 type IdentityKey [32]byte
 
 // URLIdentity binds a canonical fetch URL to its key.
