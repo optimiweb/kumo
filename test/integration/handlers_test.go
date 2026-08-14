@@ -200,7 +200,7 @@ func handleSitemap(ctx context.Context, resp kumo.HTTPResponse, sink kumo.Discov
 	if err != nil {
 		return kumo.Fail(kumo.CodeContentDecodeFailed)
 	}
-	for _, loc := range parsed.Sitemaps {
+	for _, loc := range parsed.SitemapLocs() {
 		if _, err := sink.Submit(ctx, kumo.Discovery{
 			URL:           loc,
 			Method:        kumo.MethodGET,
@@ -211,7 +211,7 @@ func handleSitemap(ctx context.Context, resp kumo.HTTPResponse, sink kumo.Discov
 			return kumo.Retry(time.Second, kumo.CodeDiscoveryUnresolved)
 		}
 	}
-	for _, loc := range parsed.URLs {
+	for _, loc := range parsed.URLLocs() {
 		if _, err := sink.Submit(ctx, kumo.Discovery{
 			URL:           loc,
 			Method:        kumo.MethodGET,
