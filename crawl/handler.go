@@ -15,6 +15,8 @@ const (
 	RelationCanonical
 	RelationHreflang
 	RelationRobotsSitemap
+	// RelationLog marks a URL taken from access logs.
+	// The engine maps it to SourceLog on enqueue.
 	RelationLog
 )
 
@@ -50,9 +52,15 @@ type Discovery struct {
 	// Set it for child sitemaps (XML) discovered from a sitemap index;
 	// page URLs from a urlset default to HTML.
 	ResourceClass ResourceClass
-	// Attrs is an optional opaque map copied onto EnqueueRequest.
-	// The engine does not interpret keys. Suggested names only:
-	// relation_key (hreflang lang, etc.), lastmod, changefreq, priority.
+	// Attrs is an optional opaque map. The engine copies it onto
+	// EnqueueRequest and does not interpret keys. Suggested names only:
+	//
+	//	d.Attrs = map[string]string{
+	//	    "relation_key": "en",          // hreflang lang, etc.
+	//	    "lastmod":      entry.LastMod,
+	//	    "changefreq":   entry.ChangeFreq,
+	//	    "priority":     entry.Priority,
+	//	}
 	Attrs map[string]string
 }
 
@@ -104,6 +112,8 @@ func (i HandleInput) Redirect() (DiscoveryResult, bool) {
 }
 
 // WorkHandler processes one completed fetch under an active lease.
+// BodyView and HeaderView are invalid after Handle returns. Persist
+// evidence with Decision.WithCommit, not as a Handle aftereffect.
 type WorkHandler interface {
 	Handle(ctx context.Context, input HandleInput, sink DiscoverySink) Decision
 }

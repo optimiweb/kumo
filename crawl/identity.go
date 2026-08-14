@@ -28,7 +28,9 @@ type URLIdentity struct {
 }
 
 // NewURLIdentity constructs an identity after structural validation.
-// Host and path are taken from the already-canonical string via net/url.
+// canonicalURL should already be CanonicalFetchURL output. Host and Path
+// are parsed from that string once; they are not re-lowercased and are
+// not part of the identity key.
 func NewURLIdentity(key IdentityKey, canonicalURL string) (URLIdentity, error) {
 	u, err := parseCanonicalURL(canonicalURL)
 	if err != nil {
@@ -48,9 +50,12 @@ func (i URLIdentity) Key() IdentityKey { return i.key }
 func (i URLIdentity) URL() string { return i.url }
 
 // Host returns the hostname from the canonical URL, without a port.
+// Use this instead of re-parsing URL().
 func (i URLIdentity) Host() string { return i.host }
 
-// Path returns the URL path only (no query). An empty path is "/".
+// Path returns the path from the canonical URL, without the query.
+// An empty path is "/". Adapters that hash paths for log joins should
+// hash Path() themselves; Kumo does not provide a hash helper.
 func (i URLIdentity) Path() string { return i.path }
 
 // Equal reports whether both identities match.

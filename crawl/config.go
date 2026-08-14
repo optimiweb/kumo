@@ -187,7 +187,9 @@ func (c CollectorConfig) Validate() error {
 	return nil
 }
 
-// DefaultHeaderAllowlist returns safe response headers visible to handlers.
+// DefaultHeaderAllowlist returns the response headers visible to handlers.
+// Includes Link (hreflang, pagination) and cf-cache-status. Cookie headers
+// are never allowlisted.
 func DefaultHeaderAllowlist() []string {
 	return []string{
 		"content-type",

@@ -16,7 +16,18 @@ const (
 	DecisionFail
 )
 
-// Decision is a constructor-created work transition request.
+// Decision is a constructor-created work transition.
+//
+// Handlers return Ack, Retry, or Fail. To persist page evidence in the same
+// adapter transaction as the work row, attach a commit hook:
+//
+//	return crawl.Ack().WithCommit(func(ctx context.Context) error {
+//	    return db.WriteEvidence(ctx, page)
+//	})
+//
+// The engine copies Decision.Commit onto TransitionRequest. The Frontier
+// adapter invokes it; the engine never does. Do not write evidence as a
+// Handle aftereffect — the work fence has not settled yet.
 type Decision struct {
 	kind       DecisionKind
 	retryAfter time.Duration
@@ -24,7 +35,8 @@ type Decision struct {
 	commit     func(context.Context) error
 }
 
-// Ack acknowledges successful handling.
+// Ack acknowledges successful handling. Chain WithCommit to persist evidence
+// when the adapter settles the work.
 func Ack() Decision {
 	return Decision{kind: DecisionAck}
 }
@@ -48,14 +60,21 @@ func (d Decision) RetryAfter() time.Duration { return d.retryAfter }
 // Code returns the associated error code.
 func (d Decision) Code() ErrorCode { return d.code }
 
-// WithCommit attaches an optional commit hook. The adapter, not the engine,
-// invokes it during Transition. The hook must be idempotent.
+// WithCommit returns a copy of d with an adapter-owned commit hook.
+//
+// The Frontier calls fn at most once per new OperationID, never on replay
+// or a stale fence. fn must be idempotent: if the fence is lost after fn
+// succeeds, Transition returns ErrLeaseConflict and fn has already run.
+// If fn fails, work stays leased for recovery. Durable adapters run fn in
+// the same transaction as the work row and receipt.
 func (d Decision) WithCommit(fn func(context.Context) error) Decision {
 	d.commit = fn
 	return d
 }
 
-// Commit returns the optional adapter-owned commit hook.
+// Commit returns the hook set by WithCommit, or nil.
+// The engine assigns this to TransitionRequest.Commit; adapters read it
+// from the request, not from Decision, when implementing Transition.
 func (d Decision) Commit() func(context.Context) error { return d.commit }
 
 // Validate checks decision completeness. The commit hook is ignored.
@@ -83,17 +102,16 @@ func (d Decision) Validate() error {
 	}
 }
 
-// TransitionRequest commits a handler decision.
+// TransitionRequest is the input to WorkFrontier.Transition.
 type TransitionRequest struct {
 	OperationID OperationID
 	Lease       Lease
 	Decision    Decision
-	// Commit is invoked by the Frontier adapter at most once per new
-	// OperationID. It is not called on replay or a stale fence. It must be
-	// idempotent. Durable adapters run it in the same transaction as the
-	// work row and receipt. Failure leaves work leased for recovery. If the
-	// fence is lost after Commit succeeds, Transition returns ErrLeaseConflict;
-	// Commit has already run.
+	// Commit is optional. The engine sets it from Decision.Commit().
+	// Adapters must call it at most once per new OperationID, skip it on
+	// replay and stale fences, and treat it as idempotent. Run it in the
+	// same transaction as the work row and receipt. On error, leave work
+	// leased and do not record a receipt.
 	Commit func(context.Context) error
 }
 

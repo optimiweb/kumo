@@ -30,7 +30,9 @@ const (
 	SourceRobots    SourceCode = "robots"
 	SourceCanonical SourceCode = "canonical"
 	SourceHreflang  SourceCode = "hreflang"
-	SourceLog       SourceCode = "log"
+	// SourceLog is work discovered from access logs, not seeds or links.
+	// Pair it with RelationLog when submitting through a DiscoverySink.
+	SourceLog SourceCode = "log"
 )
 
 // Validate reports whether the source is known.
@@ -175,8 +177,9 @@ type EnqueueRequest struct {
 	Priority      int32
 	ResourceClass ResourceClass
 	AvailableAt   time.Time
-	// Attrs is an optional opaque pass-through from Discovery.Attrs.
-	// The engine and memory adapter do not interpret keys.
+	// Attrs is an optional opaque copy of Discovery.Attrs.
+	// Durable adapters may persist these; the engine and memory frontier
+	// ignore keys. Suggested names: relation_key, lastmod, changefreq, priority.
 	Attrs map[string]string
 }
 

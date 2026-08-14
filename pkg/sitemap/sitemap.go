@@ -8,7 +8,14 @@ import (
 	"io"
 )
 
-// URLEntry is one urlset entry. Date and priority fields are raw strings.
+// URLEntry is one <url> from a urlset. LastMod, ChangeFreq, and Priority
+// are the raw XML text and may be empty. Dates are not parsed. Handlers
+// typically copy them onto Discovery.Attrs:
+//
+//	sink.Submit(ctx, crawl.Discovery{
+//	    URL: e.Loc, Relation: crawl.RelationSitemap,
+//	    Attrs: map[string]string{"lastmod": e.LastMod, "changefreq": e.ChangeFreq, "priority": e.Priority},
+//	})
 type URLEntry struct {
 	Loc        string
 	LastMod    string
@@ -16,7 +23,8 @@ type URLEntry struct {
 	Priority   string
 }
 
-// SitemapEntry is one sitemapindex child. LastMod is a raw string.
+// SitemapEntry is one <sitemap> from a sitemapindex. LastMod is raw XML
+// text and may be empty. Use Result.SitemapLocs when only locations are needed.
 type SitemapEntry struct {
 	Loc     string
 	LastMod string
@@ -32,7 +40,7 @@ type Result struct {
 	URLs []URLEntry
 }
 
-// SitemapLocs returns child sitemap locations.
+// SitemapLocs returns child sitemap locations in document order.
 func (r Result) SitemapLocs() []string {
 	out := make([]string, len(r.Sitemaps))
 	for i, s := range r.Sitemaps {
@@ -41,7 +49,7 @@ func (r Result) SitemapLocs() []string {
 	return out
 }
 
-// URLLocs returns page locations.
+// URLLocs returns page locations in document order.
 func (r Result) URLLocs() []string {
 	out := make([]string, len(r.URLs))
 	for i, u := range r.URLs {
