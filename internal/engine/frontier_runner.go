@@ -100,6 +100,7 @@ func (c *Engine) RunFrontier(ctx context.Context, cfg crawl.FrontierRunConfig) (
 					OperationID: top,
 					Lease:       claim.Lease,
 					Decision:    decision,
+					Commit:      decision.Commit(),
 				})
 				if err != nil {
 					// Ambiguous: try resolve.

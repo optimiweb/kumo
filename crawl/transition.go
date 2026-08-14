@@ -1,6 +1,7 @@
 package crawl
 
 import (
+	"context"
 	"fmt"
 	"time"
 )
@@ -20,6 +21,7 @@ type Decision struct {
 	kind       DecisionKind
 	retryAfter time.Duration
 	code       ErrorCode
+	commit     func(context.Context) error
 }
 
 // Ack acknowledges successful handling.
@@ -46,7 +48,17 @@ func (d Decision) RetryAfter() time.Duration { return d.retryAfter }
 // Code returns the associated error code.
 func (d Decision) Code() ErrorCode { return d.code }
 
-// Validate checks decision completeness.
+// WithCommit attaches an optional commit hook. The adapter, not the engine,
+// invokes it during Transition. The hook must be idempotent.
+func (d Decision) WithCommit(fn func(context.Context) error) Decision {
+	d.commit = fn
+	return d
+}
+
+// Commit returns the optional adapter-owned commit hook.
+func (d Decision) Commit() func(context.Context) error { return d.commit }
+
+// Validate checks decision completeness. The commit hook is ignored.
 func (d Decision) Validate() error {
 	switch d.kind {
 	case DecisionAck:
@@ -76,6 +88,13 @@ type TransitionRequest struct {
 	OperationID OperationID
 	Lease       Lease
 	Decision    Decision
+	// Commit is invoked by the Frontier adapter at most once per new
+	// OperationID. It is not called on replay or a stale fence. It must be
+	// idempotent. Durable adapters run it in the same transaction as the
+	// work row and receipt. Failure leaves work leased for recovery. If the
+	// fence is lost after Commit succeeds, Transition returns ErrLeaseConflict;
+	// Commit has already run.
+	Commit func(context.Context) error
 }
 
 // TransitionApplyState classifies transition application.

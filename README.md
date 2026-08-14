@@ -136,6 +136,10 @@ Handlers receive one finished fetch and return a decision:
 | `kumo.Fail(code)` | Terminal failure |
 | `kumo.DefaultDecision(res)` | Map common fetch outcomes automatically |
 
+Persist page evidence with `Ack().WithCommit(fn)` (or Retry/Fail) so the
+adapter can write it in the same transaction as the work transition. Do not
+write evidence as a Handle aftereffect — the work fence has not settled yet.
+
 Submit related URLs during the handler with `sink.Submit`. Kumo does not
 auto-extract HTML links; discovery is application-defined.
 

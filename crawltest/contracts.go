@@ -23,9 +23,48 @@ func CheckFrontier(t testing.TB, newFrontier FrontierFactory) {
 	t.Helper()
 	checkWorkLifecycle(t, newFrontier)
 	checkTransitionReplay(t, newFrontier)
+	checkTransitionCommit(t, newFrontier)
 	checkExpiredLeaseAndStaleFence(t, newFrontier)
 	checkFetchReservationLifecycle(t, newFrontier)
 	checkRobotsSingleFlight(t, newFrontier)
+}
+
+func checkTransitionCommit(t testing.TB, newFrontier FrontierFactory) {
+	t.Helper()
+	frontier := newFrontier(t)
+	ctx := context.Background()
+	_, lease := enqueueAndClaim(t, frontier, testEnqueueRequest(t, 7), operationID(50), time.Second)
+	var calls int
+	fn := func(context.Context) error {
+		calls++
+		return nil
+	}
+	req := crawl.TransitionRequest{
+		OperationID: operationID(51),
+		Lease:       lease,
+		Decision:    crawl.Ack(),
+		Commit:      fn,
+	}
+	first, err := frontier.Transition(ctx, req)
+	if err != nil {
+		t.Fatalf("commit transition: %v", err)
+	}
+	if first.ApplyState != crawl.TransitionApplied || first.FinalState != crawl.WorkHandled {
+		t.Fatalf("commit transition = %+v, want handled", first)
+	}
+	if calls != 1 {
+		t.Fatalf("commit calls = %d, want 1", calls)
+	}
+	replay, err := frontier.Transition(ctx, req)
+	if err != nil {
+		t.Fatalf("replay commit transition: %v", err)
+	}
+	if replay.ApplyState != crawl.TransitionAlreadyApplied {
+		t.Fatalf("replay = %+v, want already applied", replay)
+	}
+	if calls != 1 {
+		t.Fatalf("commit calls after replay = %d, want 1", calls)
+	}
 }
 
 func checkWorkLifecycle(t testing.TB, newFrontier FrontierFactory) {

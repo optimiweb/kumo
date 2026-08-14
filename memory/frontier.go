@@ -368,43 +368,61 @@ func (m *MemoryFrontier) Transition(ctx context.Context, req crawl.TransitionReq
 		return crawl.TransitionResult{}, err
 	}
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	key := mfOpHex(req.OperationID)
 	if prev, ok := m.transitions[key]; ok {
 		r := prev.result
+		m.mu.Unlock()
 		return crawl.TransitionResult{ApplyState: crawl.TransitionAlreadyApplied, FinalState: r.FinalState, Code: r.Code}, nil
 	}
 	it, err := m.itemForLeaseLocked(req.Lease)
 	if err != nil {
+		m.mu.Unlock()
 		return crawl.TransitionResult{}, err
+	}
+	workID := it.work.ID()
+	token := it.token
+	generation := it.generation
+	m.mu.Unlock()
+
+	if req.Commit != nil {
+		if err := req.Commit(ctx); err != nil {
+			return crawl.TransitionResult{}, err
+		}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, ok := m.items[workID]
+	if !ok || cur.state != mfLeased || cur.token != token || cur.generation != generation {
+		return crawl.TransitionResult{}, crawl.ErrLeaseConflict
 	}
 	var final crawl.FinalWorkState
 	var code crawl.ErrorCode
 	switch req.Decision.Kind() {
 	case crawl.DecisionAck:
-		it.state = mfHandled
+		cur.state = mfHandled
 		final = crawl.WorkHandled
 	case crawl.DecisionFail:
-		it.state = mfFailed
+		cur.state = mfFailed
 		final = crawl.WorkFailed
 		code = req.Decision.Code()
 	case crawl.DecisionRetry:
-		if it.attempt >= it.maxAttempt {
-			it.state = mfFailed
+		if cur.attempt >= cur.maxAttempt {
+			cur.state = mfFailed
 			final = crawl.WorkRetryExhausted
 			code = crawl.CodeRetryExhausted
 		} else {
-			it.state = mfRetryWait
-			it.available = m.clock.Now().Add(req.Decision.RetryAfter())
+			cur.state = mfRetryWait
+			cur.available = m.clock.Now().Add(req.Decision.RetryAfter())
 			final = crawl.WorkRetryScheduled
 			code = req.Decision.Code()
 		}
 	default:
 		return crawl.TransitionResult{}, crawl.ErrInvalidDecision
 	}
-	it.token = ""
+	cur.token = ""
 	res := crawl.TransitionResult{ApplyState: crawl.TransitionApplied, FinalState: final, Code: code}
-	m.transitions[key] = mfTransitionRecord{workID: it.work.ID(), result: res}
+	m.transitions[key] = mfTransitionRecord{workID: workID, result: res}
 	return res, nil
 }
 
