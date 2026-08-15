@@ -6,6 +6,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 func TestReadBodyWireLimit(t *testing.T) {
@@ -27,6 +29,30 @@ func TestReadBodyGzipDecodedLimit(t *testing.T) {
 	}
 }
 
+func TestReadBodyBrotliOK(t *testing.T) {
+	var buf bytes.Buffer
+	bw := brotli.NewWriter(&buf)
+	original := "Hello Brotli World! Fast and modern compression."
+	_, _ = bw.Write([]byte(original))
+	_ = bw.Close()
+
+	res := ReadBody(context.Background(), bytes.NewReader(buf.Bytes()), "br", 10000, 1000)
+	if res.Code != "" || string(res.Data) != original {
+		t.Fatalf("got code=%s, data=%q, want %q", res.Code, string(res.Data), original)
+	}
+}
+
+func TestReadBodyBrotliDecodedLimit(t *testing.T) {
+	var buf bytes.Buffer
+	bw := brotli.NewWriter(&buf)
+	_, _ = bw.Write(bytes.Repeat([]byte("b"), 5000))
+	_ = bw.Close()
+	res := ReadBody(context.Background(), bytes.NewReader(buf.Bytes()), "br", 10000, 100)
+	if res.Code != "decoded_body_too_large" {
+		t.Fatalf("code=%s wire=%d decoded=%d", res.Code, res.WireBytes, res.DecodedBytes)
+	}
+}
+
 func TestReadBodyExactLimitOK(t *testing.T) {
 	data := []byte("hello")
 	res := ReadBody(context.Background(), bytes.NewReader(data), "identity", 5, 5)
@@ -36,7 +62,7 @@ func TestReadBodyExactLimitOK(t *testing.T) {
 }
 
 func TestReadBodyUnsupportedEncoding(t *testing.T) {
-	res := ReadBody(context.Background(), strings.NewReader("x"), "br", 100, 100)
+	res := ReadBody(context.Background(), strings.NewReader("x"), "deflate", 100, 100)
 	if res.Code != "unsupported_content_encoding" {
 		t.Fatalf("code=%s", res.Code)
 	}

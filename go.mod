@@ -3,6 +3,7 @@ module github.com/optimiweb/kumo
 go 1.26.0
 
 require (
+	github.com/andybalholm/brotli v1.2.2
 	github.com/bits-and-blooms/bitset v1.24.4
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8
 	github.com/stretchr/testify v1.8.1

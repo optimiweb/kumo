@@ -81,6 +81,7 @@ type FetchReport struct {
 	Duration     time.Duration
 	WireBytes    int64
 	DecodedBytes int64
+	RetryAfter   time.Duration
 }
 
 // FinishFetchRequest settles a reservation.

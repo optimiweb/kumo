@@ -40,7 +40,9 @@ type Config struct {
 	// AllowAddrs optionally permits specific addresses that would otherwise be
 	// rejected by the public egress policy. Production collectors must leave
 	// this empty. Tests may inject loopback addresses for httptest.
-	AllowAddrs []netip.Addr
+	AllowAddrs     []netip.Addr
+	HeaderProvider func(origin string) http.Header
+	ExtraHeaders   http.Header
 }
 
 // Client performs single-hop safe fetches.
@@ -170,7 +172,24 @@ func (c *Client) doPinned(
 	}
 	httpReq.Header.Set("User-Agent", c.cfg.UserAgent)
 	httpReq.Header.Set("Accept", "*/*")
-	httpReq.Header.Set("Accept-Encoding", "gzip, identity")
+	httpReq.Header.Set("Accept-Encoding", "gzip, br, identity")
+	if c.cfg.ExtraHeaders != nil {
+		for k, vs := range c.cfg.ExtraHeaders {
+			for _, v := range vs {
+				httpReq.Header.Add(k, v)
+			}
+		}
+	}
+	if c.cfg.HeaderProvider != nil {
+		origin := u.Scheme + "://" + u.Host
+		if extra := c.cfg.HeaderProvider(origin); extra != nil {
+			for k, vs := range extra {
+				for _, v := range vs {
+					httpReq.Header.Add(k, v)
+				}
+			}
+		}
+	}
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {

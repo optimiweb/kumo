@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"fmt"
+	"net/http"
 	"time"
 )
 
@@ -134,6 +135,7 @@ type CollectorConfig struct {
 	Bodies          ResourceLimits
 	Timeouts        TimeoutConfig
 	Robots          RobotsConfig
+	OriginPressure  OriginPressurePolicy
 	MaxRedirectHops uint16
 	MaxDiscoveries  int
 	MaxHeaderBytes  int
@@ -144,6 +146,9 @@ type CollectorConfig struct {
 	RobotsLease     time.Duration
 	RenewSafety     time.Duration
 	Workers         int
+	EventListener   EventListener
+	HeaderProvider  func(origin string) http.Header
+	ExtraHeaders    http.Header
 }
 
 // Validate checks shared configuration.
@@ -205,6 +210,7 @@ func DefaultHeaderAllowlist() []string {
 		"age",
 		"link",
 		"cf-cache-status",
+		"retry-after",
 	}
 }
 
@@ -216,6 +222,7 @@ func DefaultCollectorConfig() CollectorConfig {
 		Bodies:          DefaultResourceLimits(),
 		Timeouts:        DefaultTimeouts(),
 		Robots:          DefaultRobotsConfig(),
+		OriginPressure:  DefaultOriginPressurePolicy(),
 		MaxRedirectHops: 5,
 		MaxDiscoveries:  100,
 		MaxHeaderBytes:  64 << 10,

@@ -103,6 +103,24 @@ func HostPolicy(hosts ...string) BaselinePolicy {
 	return p
 }
 
+// OriginPressurePolicy configures adaptive rate limiting and circuit breaking.
+type OriginPressurePolicy struct {
+	RespectRetryAfter       bool
+	MaxRetryAfter           int // max retry after in seconds, e.g. 300
+	Consecutive5xxThreshold int // consecutive 5xx errors before cooldown
+	CooldownDurationSeconds int // seconds to pause origin during cooldown
+}
+
+// DefaultOriginPressurePolicy returns standard adaptive throttling settings.
+func DefaultOriginPressurePolicy() OriginPressurePolicy {
+	return OriginPressurePolicy{
+		RespectRetryAfter:       true,
+		MaxRetryAfter:           300,
+		Consecutive5xxThreshold: 5,
+		CooldownDurationSeconds: 30,
+	}
+}
+
 // IsUnsafeIP reports whether addr is a disallowed destination for public
 // crawl egress.
 func IsUnsafeIP(ip net.IP) bool {

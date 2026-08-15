@@ -207,9 +207,23 @@ func (r *RobotsData) Rules(agent string) []Rule {
 // TestRules evaluates a path against derived rules using the same
 // most-specific-wins semantics as Group.Test. The default is allow.
 func TestRules(rules []Rule, path string) bool {
+	return ExplainRules(rules, path).Allowed
+}
+
+// MatchExplanation explains whether and why a path is allowed by rules.
+type MatchExplanation struct {
+	Allowed     bool
+	MatchedRule *Rule
+	Reason      string
+}
+
+// ExplainRules evaluates a path against derived rules and returns a structured explanation.
+func ExplainRules(rules []Rule, path string) MatchExplanation {
 	var prefixLen int
+	var matched *Rule
 	allow := true
-	for _, r := range rules {
+	for i := range rules {
+		r := &rules[i]
 		if r.Pattern != "" {
 			re, err := regexp.Compile(r.Pattern)
 			if err != nil {
@@ -218,16 +232,37 @@ func TestRules(rules []Rule, path string) bool {
 			if re.MatchString(path) && len(r.Pattern) > prefixLen {
 				prefixLen = len(r.Pattern)
 				allow = r.Allow
+				matched = r
 			}
 		} else if r.Path == "/" && prefixLen == 0 {
 			prefixLen = 1
 			allow = r.Allow
+			matched = r
 		} else if strings.HasPrefix(path, r.Path) && len(r.Path) > prefixLen {
 			prefixLen = len(r.Path)
 			allow = r.Allow
+			matched = r
 		}
 	}
-	return allow
+	if matched == nil {
+		return MatchExplanation{
+			Allowed: true,
+			Reason:  "default allow (no matching disallow directive)",
+		}
+	}
+	ruleType := "Disallow"
+	if matched.Allow {
+		ruleType = "Allow"
+	}
+	reason := ruleType + ": " + matched.Path
+	if matched.Pattern != "" {
+		reason = ruleType + " (pattern): " + matched.Pattern
+	}
+	return MatchExplanation{
+		Allowed:     allow,
+		MatchedRule: matched,
+		Reason:      reason,
+	}
 }
 
 // From Google's spec:

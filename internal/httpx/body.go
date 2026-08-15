@@ -1,11 +1,14 @@
 package httpx
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/andybalholm/brotli"
 )
 
 // BodyResult is a bounded decoded body.
@@ -49,6 +52,18 @@ func ReadBody(ctx context.Context, r io.Reader, contentEncoding string, wireLimi
 		}
 		defer gr.Close()
 		decoded, err = readAllContext(ctx, io.LimitReader(gr, decodedLimit+1), decodedLimit+1)
+		if err != nil {
+			if ctx.Err() != nil {
+				return BodyResult{Code: codeFromCtx(ctx), WireBytes: wireN}
+			}
+			return BodyResult{Code: "content_decode_failed", WireBytes: wireN}
+		}
+		if int64(len(decoded)) > decodedLimit {
+			return BodyResult{Code: "decoded_body_too_large", WireBytes: wireN, DecodedBytes: int64(len(decoded))}
+		}
+	case "br":
+		br := brotli.NewReader(bytes.NewReader(compressed))
+		decoded, err = readAllContext(ctx, io.LimitReader(br, decodedLimit+1), decodedLimit+1)
 		if err != nil {
 			if ctx.Err() != nil {
 				return BodyResult{Code: codeFromCtx(ctx), WireBytes: wireN}

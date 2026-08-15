@@ -116,6 +116,9 @@ func (c *Engine) RunFrontier(ctx context.Context, cfg crawl.FrontierRunConfig) (
 						continue
 					}
 				}
+				if c.cfg.EventListener != nil {
+					c.cfg.EventListener.OnWorkTransition(claim.Lease.Work(), tres)
+				}
 				switch tres.FinalState {
 				case crawl.WorkHandled:
 					handled.Add(1)

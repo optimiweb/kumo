@@ -24,9 +24,12 @@ func CheckFrontier(t testing.TB, newFrontier FrontierFactory) {
 	checkWorkLifecycle(t, newFrontier)
 	checkTransitionReplay(t, newFrontier)
 	checkTransitionCommit(t, newFrontier)
+	checkCommitFailureRollback(t, newFrontier)
 	checkExpiredLeaseAndStaleFence(t, newFrontier)
 	checkFetchReservationLifecycle(t, newFrontier)
+	checkFrontierRateLimiting(t, newFrontier)
 	checkRobotsSingleFlight(t, newFrontier)
+	checkMultiOriginFairness(t, newFrontier)
 }
 
 func checkTransitionCommit(t testing.TB, newFrontier FrontierFactory) {
@@ -402,6 +405,132 @@ func testIdentity(t testing.TB) crawl.URLIdentity {
 		t.Fatalf("new test identity: %v", err)
 	}
 	return identity
+}
+
+func checkCommitFailureRollback(t testing.TB, newFrontier FrontierFactory) {
+	t.Helper()
+	frontier := newFrontier(t)
+	ctx := context.Background()
+	_, lease := enqueueAndClaim(t, frontier, testEnqueueRequest(t, 8), operationID(60), time.Second)
+	commitErr := errors.New("simulated db commit error")
+	fn := func(context.Context) error {
+		return commitErr
+	}
+	req := crawl.TransitionRequest{
+		OperationID: operationID(61),
+		Lease:       lease,
+		Decision:    crawl.Ack(),
+		Commit:      fn,
+	}
+	_, err := frontier.Transition(ctx, req)
+	if err == nil {
+		t.Fatalf("expected error from failed commit, got nil")
+	}
+	// Work should still be renewable because commit failed
+	renewed, err := frontier.Renew(ctx, crawl.RenewLeaseRequest{
+		OperationID:   operationID(62),
+		Lease:         lease,
+		LeaseDuration: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("failed to renew lease after failed commit: %v", err)
+	}
+	if renewed.Fence().WorkID() != lease.Work().ID() {
+		t.Fatalf("renewed work mismatch: got %v, want %v", renewed.Fence().WorkID(), lease.Work().ID())
+	}
+}
+
+func checkFrontierRateLimiting(t testing.TB, newFrontier FrontierFactory) {
+	t.Helper()
+	frontier := newFrontier(t)
+	ctx := context.Background()
+	_, lease := enqueueAndClaim(t, frontier, testEnqueueRequest(t, 9), operationID(70), time.Second)
+	req := crawl.ReserveFetchRequest{
+		OperationID: operationID(71),
+		Intent: crawl.FetchIntent{
+			URL:           "https://example.com/page",
+			Method:        crawl.MethodGET,
+			Purpose:       crawl.FetchPurposeWork,
+			ResourceClass: crawl.ResourceHTML,
+			MinimumDelay:  500 * time.Millisecond,
+		},
+		LeaseDuration: time.Second,
+	}
+	res1, err := frontier.ReserveFetch(ctx, lease, req)
+	if err != nil {
+		t.Fatalf("first reserve: %v", err)
+	}
+	if res1.State != crawl.FetchReserved {
+		t.Fatalf("first reserve state = %v, want FetchReserved", res1.State)
+	}
+	_ = frontier.FinishFetch(ctx, lease, crawl.FinishFetchRequest{
+		OperationID: operationID(72),
+		Reservation: res1.Reservation,
+		Report:      crawl.FetchReport{Outcome: crawl.FetchOutcomeHTTPResponse, StatusClass: 2},
+	})
+
+	// Immediate next reserve for same origin should be deferred due to MinimumDelay
+	req2 := crawl.ReserveFetchRequest{
+		OperationID: operationID(73),
+		Intent: crawl.FetchIntent{
+			URL:           "https://example.com/page-2",
+			Method:        crawl.MethodGET,
+			Purpose:       crawl.FetchPurposeWork,
+			ResourceClass: crawl.ResourceHTML,
+		},
+		LeaseDuration: time.Second,
+	}
+	res2, err := frontier.ReserveFetch(ctx, lease, req2)
+	if err != nil {
+		t.Fatalf("second reserve: %v", err)
+	}
+	if res2.State != crawl.FetchDeferred || res2.RetryAfter <= 0 {
+		t.Fatalf("second reserve state = %v (retryAfter=%v), want FetchDeferred", res2.State, res2.RetryAfter)
+	}
+}
+
+func checkMultiOriginFairness(t testing.TB, newFrontier FrontierFactory) {
+	t.Helper()
+	frontier := newFrontier(t)
+	ctx := context.Background()
+
+	id1, err := crawl.NewURLIdentity(crawl.IdentityKey{10}, "https://origin1.example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := crawl.NewURLIdentity(crawl.IdentityKey{11}, "https://origin2.example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := frontier.EnqueueSeed(ctx, crawl.EnqueueRequest{
+		Identity: id1, Method: crawl.MethodGET, Source: crawl.SourceSeed, ResourceClass: crawl.ResourceHTML,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := frontier.EnqueueSeed(ctx, crawl.EnqueueRequest{
+		Identity: id2, Method: crawl.MethodGET, Source: crawl.SourceSeed, ResourceClass: crawl.ResourceHTML,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := frontier.SealSeeds(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	claim1, err := frontier.Claim(ctx, crawl.ClaimRequest{OperationID: operationID(80), LeaseDuration: time.Second})
+	if err != nil || claim1.State != crawl.FrontierLeased {
+		t.Fatalf("claim 1: %v", err)
+	}
+	claim2, err := frontier.Claim(ctx, crawl.ClaimRequest{OperationID: operationID(81), LeaseDuration: time.Second})
+	if err != nil || claim2.State != crawl.FrontierLeased {
+		t.Fatalf("claim 2: %v", err)
+	}
+
+	origin1 := claim1.Lease.Work().Identity().Host()
+	origin2 := claim2.Lease.Work().Identity().Host()
+	if origin1 == origin2 {
+		t.Fatalf("expected distinct origins, got %q and %q", origin1, origin2)
+	}
 }
 
 func operationID(last byte) crawl.OperationID {

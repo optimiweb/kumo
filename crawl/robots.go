@@ -111,6 +111,60 @@ func (r RobotsRecord) Expired(now time.Time) bool {
 	return now.After(r.fetchedAt.Add(r.ttl))
 }
 
+// RobotsExplanation provides structured explanation for a path match.
+type RobotsExplanation struct {
+	Allowed     bool
+	MatchedRule *RobotsRule
+	Reason      string
+}
+
+// ExplainMatch evaluates a path against the record's rules.
+func (r RobotsRecord) ExplainMatch(path string) RobotsExplanation {
+	if r.allowAll {
+		return RobotsExplanation{Allowed: true, Reason: "allow all"}
+	}
+	if r.denyAll {
+		return RobotsExplanation{Allowed: false, Reason: "deny all"}
+	}
+	if r.unavailable {
+		return RobotsExplanation{Allowed: false, Reason: "robots unavailable (fail closed)"}
+	}
+	rules := r.Rules()
+	var prefixLen int
+	var matched *RobotsRule
+	allow := true
+	for i := range rules {
+		rl := &rules[i]
+		if rl.Pattern != "" {
+			if len(rl.Pattern) > prefixLen {
+				prefixLen = len(rl.Pattern)
+				allow = rl.Allow
+				matched = rl
+			}
+		} else if rl.Path == "/" && prefixLen == 0 {
+			prefixLen = 1
+			allow = rl.Allow
+			matched = rl
+		} else if len(rl.Path) > prefixLen {
+			prefixLen = len(rl.Path)
+			allow = rl.Allow
+			matched = rl
+		}
+	}
+	if matched == nil {
+		return RobotsExplanation{Allowed: true, Reason: "default allow (no matching disallow directive)"}
+	}
+	ruleType := "Disallow"
+	if matched.Allow {
+		ruleType = "Allow"
+	}
+	reason := ruleType + ": " + matched.Path
+	if matched.Pattern != "" {
+		reason = ruleType + " (pattern): " + matched.Pattern
+	}
+	return RobotsExplanation{Allowed: allow, MatchedRule: matched, Reason: reason}
+}
+
 // AcquireRobotsRequest acquires robots cache ownership.
 type AcquireRobotsRequest struct {
 	OperationID   OperationID

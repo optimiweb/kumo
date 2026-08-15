@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,7 +42,15 @@ func (c *Engine) processWork(
 	})
 	defer stopRenew()
 
+	if c.cfg.EventListener != nil {
+		c.cfg.EventListener.OnFetchStart(work)
+	}
+
 	result := c.execute(workCtx, cancel, lease, frontier)
+
+	if c.cfg.EventListener != nil {
+		c.cfg.EventListener.OnFetchComplete(work, result)
+	}
 
 	// Redirect discovery before handler.
 	var redirectRes crawl.DiscoveryResult
@@ -151,6 +161,10 @@ func (c *Engine) doFetchWithRenewal(
 
 	httpResp := c.client.Do(ctx, httpx.Request{URL: rawURL, Method: string(method)}, lim.WireBytes, lim.DecodedBytes)
 	out, _ := mapHTTPCode(httpResp.Code)
+	var retryAfter time.Duration
+	if vs, ok := httpResp.Headers["retry-after"]; ok && len(vs) > 0 {
+		retryAfter = parseRetryAfter(vs[0])
+	}
 	_ = frontier.FinishFetch(context.WithoutCancel(ctx), lease, crawl.FinishFetchRequest{
 		OperationID: res.ID(),
 		Reservation: res,
@@ -160,6 +174,7 @@ func (c *Engine) doFetchWithRenewal(
 			Duration:     httpResp.Duration,
 			WireBytes:    httpResp.WireBytes,
 			DecodedBytes: httpResp.DecodedBytes,
+			RetryAfter:   retryAfter,
 		},
 	})
 	return httpResp
@@ -170,6 +185,23 @@ func outcomeOrHTTP(o crawl.FetchOutcome) crawl.FetchOutcome {
 		return crawl.FetchOutcomeHTTPResponse
 	}
 	return o
+}
+
+func parseRetryAfter(val string) time.Duration {
+	val = strings.TrimSpace(val)
+	if val == "" {
+		return 0
+	}
+	if secs, err := strconv.Atoi(val); err == nil && secs > 0 {
+		return time.Duration(secs) * time.Second
+	}
+	if t, err := http.ParseTime(val); err == nil {
+		d := time.Until(t)
+		if d > 0 {
+			return d
+		}
+	}
+	return 0
 }
 
 // renewLoop runs renew at interval until the context ends, the returned stop
@@ -238,6 +270,11 @@ func (c *Engine) reserveFetch(
 		case crawl.FetchReserved:
 			return res.Reservation, crawl.CodeNone, nil
 		case crawl.FetchDeferred:
+			if c.cfg.EventListener != nil {
+				if origin, err := crawl.OriginKey(rawURL); err == nil {
+					c.cfg.EventListener.OnOriginThrottled(origin, res.RetryAfter)
+				}
+			}
 			if err := waitBackoff(ctx, res.RetryAfter); err != nil {
 				return crawl.FetchReservation{}, crawl.CodeCancelled, err
 			}

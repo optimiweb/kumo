@@ -4,6 +4,7 @@ package integration_test
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -178,5 +179,41 @@ func TestHostPolicyBlocksOffsite(t *testing.T) {
 	}))
 	if log.saw("https://evil.example/phish") {
 		t.Fatal("off-host discovery must not be fetched")
+	}
+}
+
+func TestStandardHandlersAndEventListener(t *testing.T) {
+	h := newHarness(t)
+
+	var startCount, completeCount, transitionCount atomic.Int64
+	h.cfg.EventListener = kumo.EventFuncs{
+		FetchStart: func(work kumo.Work) {
+			startCount.Add(1)
+		},
+		FetchComplete: func(work kumo.Work, res kumo.FetchResult) {
+			completeCount.Add(1)
+		},
+		WorkTransition: func(work kumo.Work, tres kumo.TransitionResult) {
+			transitionCount.Add(1)
+		},
+	}
+
+	fr := h.frontier(memory.MemoryFrontierOptions{MaxPages: 30, FetchBudget: 40})
+	h.enqueueSeed(fr, exampleOrigin+"/robots.txt", kumo.ResourceRobots)
+	h.enqueueSeed(fr, exampleOrigin+"/sitemap.xml", kumo.ResourceXMLSitemap)
+
+	// Combine standard sitemap handler and link discovery handler
+	handler := kumo.NewSitemapHandler(kumo.DefaultSitemapHandlerOptions(),
+		kumo.NewLinkDiscoveryHandler(kumo.LinkDiscoveryOptions{SameHostOnly: true, MaxDepth: 2}, nil),
+	)
+
+	report := h.runFrontier(fr, handler)
+
+	if report.Handled() < 5 {
+		t.Fatalf("expected >=5 handled, got %d", report.Handled())
+	}
+	if startCount.Load() < 5 || completeCount.Load() < 5 || transitionCount.Load() < 5 {
+		t.Fatalf("event listener callbacks mismatch: start=%d complete=%d transition=%d",
+			startCount.Load(), completeCount.Load(), transitionCount.Load())
 	}
 }

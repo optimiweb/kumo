@@ -21,6 +21,7 @@ type MemoryFrontierOptions struct {
 	MaxOriginConc  int
 	RatePerOrigin  float64
 	BurstPerOrigin float64
+	OriginPressure crawl.OriginPressurePolicy
 }
 
 // MemoryFrontier is a deterministic in-memory Frontier implementation.
@@ -47,6 +48,8 @@ type MemoryFrontier struct {
 	burstPerOrigin float64
 	originTokens   map[string]*mfTokenBucket
 	originNext     map[string]time.Time
+	originPressure crawl.OriginPressurePolicy
+	origin5xx      map[string]int
 
 	robotsCache map[crawl.RobotsKey]*mfRobotsEntry
 	robotsOps   map[string]struct{}
@@ -144,6 +147,8 @@ func NewMemoryFrontier(opts MemoryFrontierOptions) *MemoryFrontier {
 		burstPerOrigin: opts.BurstPerOrigin,
 		originTokens:   make(map[string]*mfTokenBucket),
 		originNext:     make(map[string]time.Time),
+		originPressure: opts.OriginPressure,
+		origin5xx:      make(map[string]int),
 		robotsCache:    make(map[crawl.RobotsKey]*mfRobotsEntry),
 		robotsOps:      make(map[string]struct{}),
 	}
@@ -619,6 +624,34 @@ func (m *MemoryFrontier) FinishFetch(ctx context.Context, lease crawl.Lease, req
 	}
 	res.finished = true
 	res.report = req.Report
+	now := m.clock.Now()
+
+	if req.Report.RetryAfter > 0 && m.originPressure.RespectRetryAfter {
+		delay := req.Report.RetryAfter
+		if m.originPressure.MaxRetryAfter > 0 && delay > time.Duration(m.originPressure.MaxRetryAfter)*time.Second {
+			delay = time.Duration(m.originPressure.MaxRetryAfter) * time.Second
+		}
+		next := now.Add(delay)
+		if next.After(m.originNext[res.origin]) {
+			m.originNext[res.origin] = next
+		}
+	}
+
+	if req.Report.StatusClass == 5 {
+		m.origin5xx[res.origin]++
+		threshold := m.originPressure.Consecutive5xxThreshold
+		if threshold > 0 && m.origin5xx[res.origin] >= threshold {
+			cooldown := time.Duration(m.originPressure.CooldownDurationSeconds) * time.Second
+			if cooldown <= 0 {
+				cooldown = 30 * time.Second
+			}
+			m.originNext[res.origin] = now.Add(cooldown)
+			m.origin5xx[res.origin] = 0
+		}
+	} else if req.Report.StatusClass == 2 || req.Report.StatusClass == 3 {
+		m.origin5xx[res.origin] = 0
+	}
+
 	m.releaseReservationLocked(res)
 	return nil
 }

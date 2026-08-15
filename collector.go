@@ -49,6 +49,8 @@ func NewCollector(cfg CollectorConfig) (*Collector, error) {
 		TotalTimeout:    cfg.Timeouts.Total,
 		MaxHeaderBytes:  cfg.MaxHeaderBytes,
 		HeaderAllowlist: allow,
+		HeaderProvider:  cfg.HeaderProvider,
+		ExtraHeaders:    cfg.ExtraHeaders,
 	})
 	return &Collector{cfg: cfg, client: client}, nil
 }
